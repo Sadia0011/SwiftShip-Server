@@ -3,6 +3,8 @@ const cors = require('cors');
 require("dotenv").config();
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const jwt = require("jsonwebtoken");
+const stripe = require("stripe")(process.env.Stripe_Secret_Key);
+
 const port=process.env.PORT || 5000;
 
 const app=express();
@@ -53,6 +55,7 @@ async function run() {
     // await client.connect();
     const usersCollection = client.db("swiftship").collection("users");
     const BookingParcelCollection = client.db("swiftship").collection("bookingParcel");
+    const PaymentCollection = client.db("swiftship").collection("payment");
 // jwt related api
 app.post("/jwt", (req, res) => {
   const user = req.body;
@@ -66,7 +69,7 @@ app.post("/jwt", (req, res) => {
 
 
 // user related api
-    app.get("/users",verifyJWT,async(req,res)=>{
+    app.get("/users",async(req,res)=>{
       
       const result=await usersCollection.find().toArray();
       res.send(result)
@@ -149,14 +152,105 @@ app.get("/allDeliveryman",async(req,res)=>{
 })
 
 
+// get all the delivery manId from bookingParcelCollection
+app.get("/deliverymanId/:id",async(req,res)=>{
+  console.log("hello from deliverymanId",req.query)
+  const id=req.params.id;
+  console.log("id",id)
+  const query = { deliverymanId: id };
+  console.log("query",query)
+const deliveryman=await BookingParcelCollection.find(query).toArray()
+console.log("deliveryman",deliveryman)
+
+  res.send(deliveryman)
+})
+
+// to get the id of the loggedIn User
+app.get("/getLoggedInId/:email", async (req, res) => {
+  const email = req.params.email;
+const query = { email: email };
+  const user = await usersCollection.findOne(query);
+ console.log("user from getloggedIn",user)
+  
+  res.send(user);
+});
+
+
+// app.get("/deliverymanWithId",async(req,res)=>{
+//   const email = req.query.email;
+//   const query = { email: email };
+//   const user = await usersCollection.findOne(query);
+//   console.log("User id deliveryman",user._id)
+//   const filter = { deliverymanId: user._id }
+//   console.log("query",query)
+//   const deliveryman=await BookingParcelCollection.find(filter).toArray()
+//   console.log("deliveryman from deliverymanWithId",deliveryman)
+  
+//     res.send(deliveryman)
+//   // res.send(user._id)
+// })
+
+
+// get reviewcount and deliverymancount for all the deliveryman from bookingParcelCollection
+// app.get("/countForDeliveryman/:id",async(req,res)=>{
+//   const id=req.params.id;
+//   // console.log("id",id)
+//   const query = { deliverymanId: id };
+//   // console.log("query",query)
+// const deliveryman=await BookingParcelCollection.find(query).toArray()
+// // console.log("deliveryman",deliveryman)
+
+// const deliveredParcel=deliveryman.filter(parcel=>parcel.status=== 'delivered')
+// // console.log("deliveredParcel",deliveredParcel)
+// const deliveredParcelCount= deliveredParcel.length
+// // console.log("deliveredParcelCount",deliveredParcelCount)
+// const reviewParcel=deliveryman.filter(parcel=>parcel.review)
+// // console.log("reviewParcel",reviewParcel)
+// const reviewParcelCount= reviewParcel.length
+// // console.log("reviewParcelCount",reviewParcelCount)
+
+// let sumOfReview = 0;
+//     for (const parcel of reviewParcel) {
+//       sumOfReview += parseInt(parcel.review);
+//     }
+// // console.log("sumOfReview",sumOfReview)
+
+// const averageReview=(sumOfReview/reviewParcelCount).toFixed(2)
+// // console.log(averageReview)
+//  res.send({
+//   deliveredParcelCount,
+//   // reviewParcelCount,
+//   // sumOfReview,
+//   averageReview
+//  })
+// })
+// update the deliveryman with counts and reviews
+// app.patch("/addCountForDeliveryman/:id",async(req,res)=>{
+//   const parcel=req.body
+//   console.log("parcel",parcel)
+//   const id=req.params.id;
+//   const filter={_id:new ObjectId(id)}
+//   const updateDoc={
+//     $set:{
+//       deliveredParcelCount:parcel.deliveredParcelCount,
+//       averageReview:parcel.averageReview
+//     }
+//   }
+//   console.log(updateDoc)
+//   const result=await usersCollection.updateOne(filter,updateDoc)
+//   res.send(result)
+// })
 
 // get all the parcel booked
+
+
+
 app.get("/parcelBooked", async (req, res) => {
   const count = await BookingParcelCollection.countDocuments();
   res.send({ parcelBooked: count });
 });
 // get all the parcel delivered
-app.get("/parcelBooked", async (req, res) => {
+app.get("/parcelDelivered", async (req, res) => {
   const count = await BookingParcelCollection.countDocuments({ status: "delivered" });
   res.send({ parcelDelivered: count });
 });
@@ -164,6 +258,48 @@ app.get("/parcelBooked", async (req, res) => {
 app.get("/registeredUsers", async (req, res) => {
   const count = await usersCollection.countDocuments();
   res.send({ registeredUsers: count });
+});
+
+
+// update user when he will book a parcel
+app.patch('/userParcelCount/:email', async (req, res) => {
+  const email = req.params.email;
+  const filter = { email: email };
+  const updateDoc = {
+    $inc: {
+      bookParcelCount: 1
+    },
+  };
+  const result = await usersCollection.updateOne(filter, updateDoc)
+  res.send(result);
+});
+
+
+// update deliveryman when he will deliver a parcel
+app.patch('/deliveredParcelCount/:email', async (req, res) => {
+  const email = req.params.email;
+  const filter = { email: email };
+  const updateDoc = {
+    $inc: {
+      deliveredParcelCount: 1
+    },
+  };
+  const result = await usersCollection.updateOne(filter, updateDoc)
+  res.send(result);
+});
+app.patch('/reviewedParcelCount/:deliverymanId', async (req, res) => {
+  const deliverymanId = req.params.deliverymanId;
+  const filter = {_id:new ObjectId (deliverymanId) };
+  const reviewedParcel = req.body.reviewedParcel;
+  console.log("reviewedParcel",reviewedParcel)
+  const updateDoc = {
+    $inc: {
+      sum : reviewedParcel,
+      reviewedParcelCount : 1
+    },
+  };
+  const result = await usersCollection.updateOne(filter, updateDoc);
+  res.send(result);
 });
 
 
@@ -196,8 +332,27 @@ app.patch("/users/deliveryman/:id", async (req, res) => {
   res.send(result);
 });
 
-
-
+// top deliveryman
+app.get('/topDeliveryMen',async(req,res)=>{
+  const deliveryMen = await usersCollection
+      .find({ 
+      role: 'deliveryman', 
+      deliveredParcelCount: { $gt: 0 }, 
+      reviewedParcelCount: { $gt: 0 } 
+    }).toArray();
+ deliveryMen.sort((a,b)=>{
+      const avgRatingA = a.reviewedParcelCount > 0 ? a.sum / a.reviewedParcelCount : 0;
+      const avgRatingB = b.reviewedParcelCount > 0 ? b.sum / b.reviewedParcelCount : 0;
+      if (avgRatingA !== avgRatingB) {
+        return avgRatingA - avgRatingB;
+      }
+      return a.deliveredParcelCount - b.deliveredParcelCount;  
+    
+    })
+    res.send(deliveryMen)
+    // res.json({ success: true, deliveryMen: deliveryMen });
+})
+   
 
 
 // bookParcel related api
@@ -205,6 +360,22 @@ app.get("/bookParcel",async(req,res)=>{
   const result=await BookingParcelCollection.find().toArray();
   res.send(result)
 })
+// get bookparcel by email
+app.get('/bookParcelByEmail', async (req, res) => {
+  const email = req.query.email;
+  const query = { email: email };
+  const result = await BookingParcelCollection.find(query).toArray();
+  res.send(result);
+});
+
+app.get("/parcelBooked/:email", async (req, res) => {
+  const email=req.params.email;
+  // console.log(email)
+  const query={email:email}
+  const count = await BookingParcelCollection.countDocuments(query);
+  console.log(count)
+  res.send({ parcelBooked: count });
+});
 
 app.get("/bookParcelForOneItem/:id",async(req,res)=>{
   const id=req.params.id;
@@ -237,21 +408,59 @@ status:parcel.status,
   res.send(result)
 })
 
-app.get("/bookParcel/:email",async(req,res)=>{
-  const email=req.params.email;
-  console.log(email)
-  const query={email:email}
-  const userParcel=await BookingParcelCollection.find(query).toArray();
-  res.send(userParcel)
+// update deliverymanId,approx_date and status
+app.patch("/bookParcelFromAdmin/:id",async(req,res)=>{
+  const parcel=req.body
+  console.log("percel",parcel)
+  const id=req.params.id;
+  const filter={_id:new ObjectId(id)}
+  const updateDoc={
+    $set:{
+      deliverymanId:parcel.deliverymanId,
+      approximate_delivery_date:parcel.approximate_delivery_date,
+      status:parcel.status,
+    }
+  }
+  console.log(updateDoc)
+  const result=await BookingParcelCollection.updateOne(filter,updateDoc)
+  res.send(result)
+})
+// update only status
+app.patch("/bookParcelFromDeliveryman/:id",async(req,res)=>{
+  const parcel=req.body
+  console.log("percel",parcel)
+  const id=req.params.id;
+  const filter={_id:new ObjectId(id)}
+  const updateDoc={
+    $set:{
+      status:parcel.status,
+    }
+  }
+  console.log(updateDoc)
+  const result=await BookingParcelCollection.updateOne(filter,updateDoc)
+  res.send(result)
 })
 
-app.get("/parcelBooked/:email", async (req, res) => {
-  const email=req.params.email;
-  // console.log(email)
-  const query={email:email}
-  const count = await BookingParcelCollection.countDocuments(query);
-  res.send({ parcelBooked: count });
-});
+// update review,review_giving_date and feedback_Text
+app.patch("/updateBookParcelFromUser/:id",async(req,res)=>{
+  const parcel=req.body
+  // console.log("percel",parcel)
+  const id=req.params.id;
+  const filter={_id:new ObjectId(id)}
+  const updateDoc={
+    $set:{
+      feedback_Text:parcel.feedback_Text,
+      review:parcel.review,
+      Review_Giving_Date:parcel.Review_Giving_Date,
+    }
+  }
+  console.log(updateDoc)
+  const result=await BookingParcelCollection.updateOne(filter,updateDoc)
+  res.send(result)
+})
+
+
+
 
 
 app.post("/bookParcel",async(req,res)=>{
@@ -275,6 +484,67 @@ app.delete("/bookParcelDelete/:id",async(req,res)=>{
   res.send(result)
 })
 
+// // get all the Customer
+// app.get("/allNormalUser",async(req,res)=>{
+//   const user=await usersCollection.find().toArray();
+//   const normalUser=user.filter(user=>user.role=="user")
+//   res.send(normalUser)
+// })
+
+
+// pagination
+app.get('/itemsCount', async (req, res) => {
+  const count = await usersCollection.countDocuments({ role: 'user' });
+  res.send({ count });
+})
+
+app.get('/items', async (req, res) => {
+  const page = parseInt(req.query.page);
+  const size = parseInt(req.query.size);
+
+  // console.log('pagination query', page, size);
+  const result = await usersCollection.find({ role: 'user' })
+  .skip(page * size)
+  .limit(size)
+  .toArray();
+  // console.log(result)
+  res.send(result);
+})
+
+// payment related api
+
+app.post("/create-payment-intent", async (req, res) => {
+  const { price } = req.body;
+const amount=parseInt(price * 100);
+  const paymentIntent = await stripe.paymentIntents.create({
+    amount: amount,
+    currency: "usd",
+    payment_method_types: ["card"],
+  });
+  res.send({
+    clientSecret: paymentIntent.client_secret,
+  });
+});
+
+app.post("/payments",async(req,res)=>{
+  const payment=req.body;
+  const result=await PaymentCollection.insertOne(payment);
+  // const query={_id:new ObjectId(payment.bookingId)}
+  // console.log("payment.bookingId",payment.bookingId)
+  // console.log("payment info",payment)
+  // const deleteParcel=await BookingParcelCollection.deleteOne(query)
+
+  // res.send({result,deleteParcel})
+  res.send({result})
+})
+
+
+app.get('/paymentHistory', async (req, res) => {
+  const email = req.query.email;
+  const query = { email: email };
+  const result = await PaymentCollection.find(query).toArray();
+  res.send(result);
+});
 
     
     // Send a ping to confirm a successful connection
