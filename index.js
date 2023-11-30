@@ -11,7 +11,13 @@ const app=express();
 
 // middleware
 app.use(express.json())
-app.use(cors())
+const corsOptions = {
+  origin: ['http://localhost:5173','https://swiftship-d9c8a.web.app']
+};
+
+app.use(cors(corsOptions));
+
+// app.use(cors())
 
 
 const verifyJWT = (req, res, next) => {
@@ -25,8 +31,9 @@ const verifyJWT = (req, res, next) => {
   // bearer token
   const token = authorization.split(" ")[1];
 
-  jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
+  jwt.verify(token, process.env.Access_Token_Secret, (err, decoded) => {
     if (err) {
+      console.error("JWT Verification Error:", err);
       return res
         .status(401)
         .send({ error: true, message: "unauthorized access" });
@@ -59,7 +66,7 @@ async function run() {
 // jwt related api
 app.post("/jwt", (req, res) => {
   const user = req.body;
-  const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
+  const token = jwt.sign(user, process.env.Access_Token_Secret, {
     expiresIn: "1h",
   });
 
@@ -89,7 +96,7 @@ app.post("/users",async(req,res)=>{
 })
 
 // check user is admin or not
-app.get("/users/admin/:email", verifyJWT, async (req, res) => {
+app.get("/users/admin/:email",verifyJWT, async (req, res) => {
   const email = req.params.email;
 
   if (req.decoded.email !== email) {
@@ -107,7 +114,7 @@ app.get("/users/admin/:email", verifyJWT, async (req, res) => {
   res.send({admin});
 });
 // check user is deliveryman or not
-app.get("/users/deliveryman/:email", verifyJWT, async (req, res) => {
+app.get("/users/deliveryman/:email",verifyJWT, async (req, res) => {
   const email = req.params.email;
 
   if (req.decoded.email !== email) {
@@ -125,7 +132,7 @@ app.get("/users/deliveryman/:email", verifyJWT, async (req, res) => {
   res.send({deliveryman});
 });
 // check user is user or not
-app.get("/users/normalUser/:email", verifyJWT, async (req, res) => {
+app.get("/users/normalUser/:email",verifyJWT, async (req, res) => {
   const email = req.params.email;
 
   if (req.decoded.email !== email) {
@@ -142,7 +149,23 @@ app.get("/users/normalUser/:email", verifyJWT, async (req, res) => {
   }
   res.send({normalUser});
 });
-
+  //checking all type user role
+  app.get("/checkuser", async (req, res) => {
+    if (req.query?.email) {
+      if (req.query.email == "undefined") {
+        console.log("undefined");
+        res.send({});
+      } else {
+        let mail = req.query.email;
+        const query = { email: mail };
+        const result = await usersCollection.findOne(query);
+        res.send(result);
+      }
+    } else {
+      console.log("no mail");
+      res.send({});
+    }
+  });
 
 // get all the delivery man
 app.get("/allDeliveryman",async(req,res)=>{
@@ -341,12 +364,13 @@ app.get('/topDeliveryMen',async(req,res)=>{
       reviewedParcelCount: { $gt: 0 } 
     }).toArray();
  deliveryMen.sort((a,b)=>{
-      const avgRatingA = a.reviewedParcelCount > 0 ? a.sum / a.reviewedParcelCount : 0;
-      const avgRatingB = b.reviewedParcelCount > 0 ? b.sum / b.reviewedParcelCount : 0;
-      if (avgRatingA !== avgRatingB) {
-        return avgRatingA - avgRatingB;
-      }
-      return a.deliveredParcelCount - b.deliveredParcelCount;  
+      // const avgRatingA = a.reviewedParcelCount > 0 ? a.sum / a.reviewedParcelCount : 0;
+      // const avgRatingB = b.reviewedParcelCount > 0 ? b.sum / b.reviewedParcelCount : 0;
+      // if (avgRatingA !== avgRatingB) {
+      //   return avgRatingA - avgRatingB;
+      // }
+      return b.sum / b.reviewedParcelCount-a.sum / a.reviewedParcelCount
+      // return a.deliveredParcelCount - b.deliveredParcelCount;  
     
     })
     res.send(deliveryMen)
